@@ -114,6 +114,7 @@ if page == "Korelasyon Analizi":
         else:
             st.error("Veri alınamadığı için analiz yapılamadı.")
 
+
 # Page 2: Para Akış Sinyalleri
 elif page == "Para Akış Sinyalleri":
     st.title("💰 Kripto Para Akış Sinyal Terminali")
@@ -173,10 +174,23 @@ elif page == "Para Akış Sinyalleri":
                 if 'Skor' in res_df.columns:
                     res_df = res_df.sort_values(by='Skor', ascending=False)
                     st.dataframe(res_df, use_container_width=True)
+
+                    # --- EXCEL İNDİRME BUTONU (YENİ EKLENDİ) ---
+                    excel_buffer = io.BytesIO()
+                    res_df.to_excel(excel_buffer, index=False, engine='openpyxl')
+                    excel_buffer.seek(0)
+                    
+                    st.download_button(
+                        label="Sinyal Raporunu Excel Olarak İndir",
+                        data=excel_buffer,
+                        file_name=f"kripto_para_akisi_{datetime.now().strftime('%Y-%m-%d')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
                 else:
                     st.error("Analiz yapılamadı, skor sütunu oluşturulamadı.")
             else:
                 st.warning("Hiçbir coin için veri çekilemedi. Lütfen internet bağlantınızı veya ticker listesini kontrol edin.")
+
 
 # Page 3:Kategori Analizi (Kripto Versiyon)
 elif page == "Kategori Analizi":
