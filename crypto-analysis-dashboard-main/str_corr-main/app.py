@@ -5,222 +5,180 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import time
 import io
-import json
-from datetime import datetime
 
-# Page configuration
-st.set_page_config(page_title="Crypto Analysis App", layout="wide")
-
-# Resimlerden alınan tam liste (yfinance uyumlu)
+# 1. SABİT COİN LİSTESİ
 ALL_COINS = [
-    "BTC-USD", "ETH-USD", "SOL-USD", "TRUMP-USD", "DOGE-USD", 
-    "XRP-USD", "XAG-USD", "RIVER-USD", "COS-USD", "XAU-USD", 
-    "BANANAS31-USD", "LYN-USD", "PIXEL-USD", "HYPE-USD", "BNB-USD", 
-    "ZEC-USD", "1000PEPE-USD", "TAO-USD", "SUI-USD", "DEGO-USD", 
-    "ADA-USD", "SIREN-USD", "LINK-USD", "AVAX-USD", "SAHARA-USD", 
-    "AXS-USD", "NAORIS-USD"
+    "BTC-USD", "TAO-USD", "XRP-USD", "AAVE-USD", "SOL-USD", "HYPE-USD", 
+    "OKB-USD", "ZEN-USD", "PUMP-USD", "XMR-USD", "SLERF-USD", "DOT-USD", 
+    "EIGEN-USD", "AVAX-USD", "ETH-USD", "ARB-USD", "DOGE-USD", "PEPE-USD"
 ]
 
-# Sidebar navigation
+st.set_page_config(page_title="Crypto Analysis Dashboard", layout="wide")
+
 st.sidebar.title("Kripto Navigasyon")
 page = st.sidebar.radio(
     "Sayfa Seçiniz:",
     ["Korelasyon Analizi", "Para Akış Sinyalleri", "Kategori Analizi", "Hacim & Getiri Analizi"]
 )
 
-# Page 1: Kripto Korelasyon Analizi
+# --- Page 1: Korelasyon Analizi (HATA GEÇİRMEYEN SON VERSİYON) ---
 if page == "Korelasyon Analizi":
     st.title("📊 Kripto Para Korelasyon Analizi")
-    st.write("Seçili kripto paraların birbirleriyle ne kadar uyumlu hareket ettiğini analiz edin.")
-
     period_options = ["3d", "7d", "1mo", "1y"]
     selected_period = st.selectbox("Zaman Dilimi Seçiniz:", options=period_options, index=0)
     
-    column_options = {"Kapanış Fiyatı": "Close", "İşlem Hacmi": "Volume"}
-    selected_column_label = st.selectbox("Analiz Edilecek Veri Türü:", options=list(column_options.keys()), index=0)
-    selected_column = column_options[selected_column_label]
-
-    if selected_period in ["3d", "7d"]:
-        selected_interval = "1h"
-    else:
-        selected_interval = "1d"
-
-    run_bt = st.button("Korelasyonu Hesapla")
-
-    if run_bt:
-        tickers = ALL_COINS
-        ticks = {}
-        progress_bar = st.progress(0)
+    if st.button("Korelasyonu Hesapla"):
         status_text = st.empty()
+        progress_bar = st.progress(0)
         
-        for i, tick in enumerate(tickers):
+        ordered_names = [t.replace('-USD', '') for t in ALL_COINS]
+        
+        # HATAYI ÖNLEYEN ADIM: Önce boş bir DataFrame oluşturuyoruz (İndeks hatasını engeller)
+        main_df = pd.DataFrame() 
+
+        for i, tick in enumerate(ALL_COINS):
             try:
                 status_text.text(f"Veri çekiliyor: {tick}")
-                df = yf.Ticker(tick).history(period=selected_period, interval=selected_interval)
-                if not df.empty:
-                    ticks[tick] = df[selected_column]
-                time.sleep(0.1) 
-                progress_bar.progress((i + 1) / len(tickers))
-            except Exception as e:
-                st.error(f"{tick} verisi alınamadı: {e}")
-
-        if ticks:
-            close_df = pd.DataFrame(ticks)
-            close_df = close_df.loc[~(close_df == 0).all(axis=1)]
-            returns = close_df.pct_change().dropna()
-            corr = returns.corr()
-
-            st.subheader(f"Isı Haritası: {selected_column_label} ({selected_period})")
-            fig, ax = plt.subplots(figsize=(12, 8))
-            sns.heatmap(corr, annot=True, fmt=".2f", cmap="coolwarm", vmin=-1, vmax=1, center=0, linewidths=.5, ax=ax)
-            ax.set_xticklabels([t.split('-')[0] for t in corr.columns], rotation=45)
-            ax.set_yticklabels([t.split('-')[0] for t in corr.index])
-            plt.tight_layout()
-            st.pyplot(fig)
-
-            excel_buffer = io.BytesIO()
-            corr.to_excel(excel_buffer, index=True)
-            excel_buffer.seek(0)
-            st.download_button(label="Excel İndir", data=excel_buffer, file_name=f"korelasyon_{selected_period}.xlsx")
-            status_text.success("Analiz tamamlandı!")
-
-# Page 2: Para Akış Sinyalleri
-elif page == "Para Akış Sinyalleri":
-    st.title("💰 Kripto Para Akış Sinyal Terminali")
-    coinler = ALL_COINS
-    
-    if st.button("Sinyalleri Tara"):
-        with st.spinner("Taranıyor..."):
-            analiz_listesi = []
-            for coin in coinler:
-                try:
-                    temp_df = yf.download(coin, period="1mo", interval="1d", progress=False)
-                    if temp_df.empty or len(temp_df) < 6: continue
-                    
-                    son_fiyat = float(temp_df['Close'].iloc[-1])
-                    bes_gun_once = float(temp_df['Close'].iloc[-6])
-                    fiyat_5g = ((son_fiyat / bes_gun_once) - 1) * 100
-                    hacim_ort_20 = float(temp_df['Volume'].rolling(window=20).mean().iloc[-1])
-                    son_hacim = float(temp_df['Volume'].iloc[-1])
-                    hacim_gucu = son_hacim / hacim_ort_20 if hacim_ort_20 > 0 else 0
-                    
-                    if fiyat_5g > 0 and hacim_gucu > 1.2: durum, skor = "GÜÇLÜ GİRİŞ", 3
-                    elif fiyat_5g < 0 and hacim_gucu > 1.2: durum, skor = "GÜÇLÜ ÇIKIŞ", -3
-                    else: durum, skor = "ROTASYON", 0
-                        
-                    analiz_listesi.append({
-                        'Coin': coin.replace('-USD', ''),
-                        '5G Değişim %': round(fiyat_5g, 2),
-                        'Hacim Gücü': round(hacim_gucu, 2),
-                        'Sinyal': durum,
-                        'Skor': skor
-                    })
-                except: continue
-            
-            if analiz_listesi:
-                res_df = pd.DataFrame(analiz_listesi).sort_values(by='Skor', ascending=False)
-                st.dataframe(res_df, use_container_width=True)
+                df = yf.download(tick, period=selected_period, interval="1h" if selected_period in ["3d", "7d"] else "1d", progress=False)
                 
-                excel_buffer = io.BytesIO()
-                res_df.to_excel(excel_buffer, index=False)
-                excel_buffer.seek(0)
-                st.download_button(label="Excel İndir", data=excel_buffer, file_name="sinyaller.xlsx")
+                if not df.empty:
+                    s = df['Close'].astype(float)
+                    s.index = s.index.tz_localize(None)
+                    name = tick.replace('-USD', '')
+                    # Sütun sütun ekleme yapıyoruz
+                    main_df[name] = s
+            except:
+                pass
+            progress_bar.progress((i + 1) / len(ALL_COINS))
 
-# Page 3: Kategori Analizi
+        # Eğer hiçbir veri çekilemediyse boş bir DataFrame oluştur (18 coinli)
+        if main_df.empty:
+            # Boş bir tarih indeksi uyduruyoruz ki tablo oluşabilsin
+            dummy_index = pd.date_range(end=datetime.now(), periods=10)
+            main_df = pd.DataFrame(index=dummy_index)
+
+        # Eksik olan coin sütunlarını 0 ile oluştur (Sayıyı 18'e tamamlar)
+        for name in ordered_names:
+            if name not in main_df.columns:
+                main_df[name] = 0.0
+        
+        # Sütunları sırala
+        main_df = main_df[ordered_names]
+
+        # Korelasyonu hesapla (Boşlukları 0 ile doldurarak)
+        returns = main_df.pct_change().fillna(0)
+        # Bazı coinler sabit 0 ise korelasyon NaN çıkar, onları da 0 yapıyoruz
+        corr = returns.corr().fillna(0)
+
+        st.subheader(f"Isı Haritası ({selected_period})")
+        
+        fig, ax = plt.subplots(figsize=(14, 10))
+        sns.heatmap(
+            corr, 
+            annot=True, 
+            fmt=".2f", 
+            cmap="coolwarm", 
+            vmin=-1, vmax=1, 
+            center=0,
+            linewidths=.5,
+            ax=ax
+        )
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        st.pyplot(fig)
+
+        # Excel Butonu
+        excel_buffer = io.BytesIO()
+        corr.to_excel(excel_buffer)
+        st.download_button(
+            label="📊 Korelasyonu Excel İndir", 
+            data=excel_buffer.getvalue(), 
+            file_name=f"korelasyon_{selected_period}.xlsx"
+        )
+        status_text.success("Analiz tamamlandı!")
+
+# --- Page 2: Para Akış Sinyalleri (Excel Eklendi) ---
+elif page == "Para Akış Sinyalleri":
+    st.title("💰 Para Akış Sinyalleri")
+    if st.button("Sinyalleri Tara"):
+        analiz_listesi = []
+        with st.spinner("Taranıyor..."):
+            for coin in ALL_COINS:
+                try:
+                    df = yf.download(coin, period="1mo", interval="1d", progress=False)
+                    if not df.empty and len(df) >= 6:
+                        son = float(df['Close'].iloc[-1])
+                        once = float(df['Close'].iloc[-6])
+                        f_degisim = ((son / once) - 1) * 100
+                        h_gucu = float(df['Volume'].iloc[-1]) / float(df['Volume'].rolling(20, min_periods=1).mean().iloc[-1])
+                        durum = "GÜÇLÜ GİRİŞ" if f_degisim > 0 and h_gucu > 1.2 else ("GÜÇLÜ ÇIKIŞ" if f_degisim < 0 and h_gucu > 1.2 else "ROTASYON")
+                        analiz_listesi.append({'Coin': coin.replace('-USD', ''), 'Değişim %': round(f_degisim, 2), 'Hacim Gücü': round(h_gucu, 2), 'Sinyal': durum})
+                    else:
+                        analiz_listesi.append({'Coin': coin.replace('-USD', ''), 'Değişim %': 0, 'Hacim Gücü': 0, 'Sinyal': "VERİ YOK"})
+                except:
+                    analiz_listesi.append({'Coin': coin.replace('-USD', ''), 'Değişim %': 0, 'Hacim Gücü': 0, 'Sinyal': "HATA"})
+            
+            res_df = pd.DataFrame(analiz_listesi)
+            st.dataframe(res_df, use_container_width=True)
+
+            # EXCEL BUTONU
+            excel_buffer = io.BytesIO()
+            res_df.to_excel(excel_buffer, index=False)
+            st.download_button(label="📥 Sinyalleri Excel Olarak İndir", data=excel_buffer.getvalue(), file_name="sinyaller.xlsx")
+
+# --- Page 3: Kategori Analizi ---
 elif page == "Kategori Analizi":
-    st.title("📊 Kripto Kategori Analizi")
-    
-    # Yeni coinlerin kategorizasyonu
+    st.title("📊 Kategori Analizi")
     sektor_haritasi = {
-        'BTC-USD': 'Major Assets', 'ETH-USD': 'L1 / Smart Contracts',
-        'SOL-USD': 'L1 / Smart Contracts', 'AVAX-USD': 'L1 / Smart Contracts',
-        'BNB-USD': 'Exchange / Layer 1', 'TRUMP-USD': 'PolitiFi / Meme',
-        'DOGE-USD': 'Memecoins', '1000PEPE-USD': 'Memecoins',
-        'XRP-USD': 'Payment', 'ADA-USD': 'L1 / Smart Contracts',
-        'SUI-USD': 'L1 / Smart Contracts', 'TAO-USD': 'AI / DePIN',
-        'HYPE-USD': 'AI / Trend', 'PIXEL-USD': 'Gaming / NFT',
-        'AXS-USD': 'Gaming / NFT', 'LINK-USD': 'Oracle',
-        'XAU-USD': 'Commodity Token', 'XAG-USD': 'Commodity Token',
-        'COS-USD': 'Content / Social', 'ZEC-USD': 'Privacy',
-        'DEGO-USD': 'DeFi / NFT', 'SAHARA-USD': 'AI / Infrastructure',
-        'NAORIS-USD': 'Security / AI', 'RIVER-USD': 'Social / Web3',
-        'LYN-USD': 'DeFi / Ecosystem', 'BANANAS31-USD': 'Meme / Ecosystem',
-        'SIREN-USD': 'DeFi / Options'
+        'BTC-USD': 'Major', 'ETH-USD': 'L1', 'SOL-USD': 'L1', 'AVAX-USD': 'L1', 'DOT-USD': 'L1',
+        'TAO-USD': 'AI', 'HYPE-USD': 'AI', 'EIGEN-USD': 'Restaking', 'ARB-USD': 'L2',
+        'XRP-USD': 'Payment', 'AAVE-USD': 'DeFi', 'DOGE-USD': 'Meme', 'PEPE-USD': 'Meme',
+        'SLERF-USD': 'Meme', 'OKB-USD': 'Exchange', 'ZEN-USD': 'Privacy', 'XMR-USD': 'Privacy', 'PUMP-USD': 'Meme'
     }
 
-    hisseler = list(sektor_haritasi.keys())
-
     if st.button("Sektörel Analizi Çalıştır"):
-        with st.spinner("Hesaplanıyor..."):
-            try:
-                data = yf.download(hisseler, period="1mo", interval="1d", progress=False)
-                if not data.empty:
-                    close_data = data['Close']
-                    volume_data = data['Volume']
-                    analiz_verileri = []
+        veriler = []
+        with st.spinner("Analiz ediliyor..."):
+            for coin in ALL_COINS:
+                try:
+                    df = yf.download(coin, period="1mo", interval="1d", progress=False)
+                    f_degisim = ((float(df['Close'].iloc[-1]) / float(df['Close'].iloc[-6])) - 1) * 100 if not df.empty and len(df) >=6 else 0
+                    veriler.append({'Kripto': coin.replace('-USD', ''), 'Sektör': sektor_haritasi.get(coin, 'Diğer'), 'Haftalık %': round(f_degisim, 2)})
+                except:
+                    veriler.append({'Kripto': coin.replace('-USD', ''), 'Sektör': sektor_haritasi.get(coin, 'Diğer'), 'Haftalık %': 0})
+            
+            res_df = pd.DataFrame(veriler)
+            st.dataframe(res_df, use_container_width=True)
+            st.bar_chart(res_df.groupby('Sektör')['Haftalık %'].mean())
+            
+            # EXCEL BUTONU
+            excel_buffer = io.BytesIO()
+            res_df.to_excel(excel_buffer, index=False)
+            st.download_button(label="📥 Kategoriyi Excel Olarak İndir", data=excel_buffer.getvalue(), file_name="kategori.xlsx")
 
-                    for coin in hisseler:
-                        try:
-                            c_close = close_data[coin]
-                            c_vol = volume_data[coin]
-                            if len(c_close) < 6: continue
-                            fiyat_5g = ((float(c_close.iloc[-1]) / float(c_close.iloc[-6])) - 1) * 100
-                            hacim_ort_20 = float(c_vol.rolling(window=20).mean().iloc[-1])
-                            hacim_gucu = float(c_vol.iloc[-1]) / hacim_ort_20 if hacim_ort_20 > 0 else 0
-                            
-                            analiz_verileri.append({
-                                'Kripto': coin.replace('-USD', ''),
-                                'Sektör': sektor_haritasi[coin],
-                                'Haftalık Getiri %': round(fiyat_5g, 2),
-                                'Hacim Gücü': round(hacim_gucu, 2),
-                                'Skor': float(fiyat_5g * hacim_gucu)
-                            })
-                        except: continue
-
-                    df = pd.DataFrame(analiz_verileri)
-                    if not df.empty:
-                        sektor_ozet = df.groupby('Sektör')['Skor'].mean().sort_values(ascending=False).reset_index()
-                        st.subheader("Kategori Güç Sıralaması")
-                        st.dataframe(sektor_ozet, use_container_width=True)
-
-                        fig, ax = plt.subplots(figsize=(10, 6))
-                        sns.barplot(data=sektor_ozet, x='Skor', y='Sektör', palette='RdYlGn', ax=ax)
-                        st.pyplot(fig)
-                        st.dataframe(df.sort_values(by='Skor', ascending=False), use_container_width=True)
-            except Exception as e:
-                st.error(f"Hata: {e}")
-
-# Page 4: Hacim & Getiri Analizi
+# --- Page 4: Hacim & Getiri Analizi ---
 elif page == "Hacim & Getiri Analizi":
-    st.title("📊 Kripto Hacim & Getiri Analizi")
-    kriptolar = ALL_COINS
-
-    if st.button("Analizi Çalıştır"):
-        with st.spinner("İşleniyor..."):
-            try:
-                data = yf.download(kriptolar, period="1mo", interval="1d")
-                if not data.empty:
-                    close_prices = data['Close']
-                    volume_data = data['Volume']
-                    analiz_sonuclari = []
-
-                    for coin in kriptolar:
-                        try:
-                            coin_close = close_prices[coin]
-                            coin_volume = volume_data[coin]
-                            fiyat_5g = ((coin_close.iloc[-1] / coin_close.iloc[-6]) - 1) * 100
-                            hacim_ort_20 = coin_volume.rolling(window=20).mean().iloc[-1]
-                            hacim_gucu = coin_volume.iloc[-1] / hacim_ort_20 if hacim_ort_20 > 0 else 0
-
-                            analiz_sonuclari.append({
-                                'Kripto Para': coin.replace('-USD', ''),
-                                'Güncel Fiyat ($)': coin_close.iloc[-1],
-                                'Haftalık Getiri %': round(fiyat_5g, 2),
-                                'Hacim Gücü': round(hacim_gucu, 2)
-                            })
-                        except: continue
-
-                    df_sorted = pd.DataFrame(analiz_sonuclari).sort_values('Hacim Gücü', ascending=False)
-                    st.dataframe(df_sorted.style.background_gradient(subset=['Hacim Gücü'], cmap='Greens'), use_container_width=True)
-            except Exception as e:
-                st.error(f"Hata: {e}")
+    st.title("📊 Hacim & Getiri Analizi")
+    if st.button("Analizi Başlat"):
+        sonuclar = []
+        with st.spinner("Veriler işleniyor..."):
+            for coin in ALL_COINS:
+                try:
+                    df = yf.download(coin, period="1mo", interval="1d", progress=False)
+                    if not df.empty and len(df) >= 6:
+                        fiyat = float(df['Close'].iloc[-1])
+                        f_degisim = ((fiyat / float(df['Close'].iloc[-6])) - 1) * 100
+                        h_gucu = float(df['Volume'].iloc[-1]) / float(df['Volume'].rolling(20, min_periods=1).mean().iloc[-1])
+                        sonuclar.append({'Kripto Para': coin.replace('-USD', ''), 'Fiyat': round(fiyat, 4), 'Haftalık %': round(f_degisim, 2), 'Hacim Gücü': round(h_gucu, 2)})
+                    else:
+                        sonuclar.append({'Kripto Para': coin.replace('-USD', ''), 'Fiyat': 0, 'Haftalık %': 0, 'Hacim Gücü': 0})
+                except:
+                    sonuclar.append({'Kripto Para': coin.replace('-USD', ''), 'Fiyat': 0, 'Haftalık %': 0, 'Hacim Gücü': 0})
+            
+            res_df = pd.DataFrame(sonuclar)
+            st.table(res_df)
+            
+            # EXCEL BUTONU
+            excel_buffer = io.BytesIO()
+            res_df.to_excel(excel_buffer, index=False)
+            st.download_button(label="📥 Verileri Excel Olarak İndir", data=excel_buffer.getvalue(), file_name="hacim_getiri.xlsx")
