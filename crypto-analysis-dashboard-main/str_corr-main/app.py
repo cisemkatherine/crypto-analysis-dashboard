@@ -8,10 +8,8 @@ import io
 
 # 1. GÜNCEL SABİT COİN LİSTESİ (20 Adet)
 ALL_COINS = [
-    "BTC-USD", "TAO-USD", "XRP-USD", "AAVE-USD", "SOL-USD", "HYPE-USD", 
-    "OKB-USD", "ZEN-USD", "PUMP-USD", "XMR-USD", "SLERF-USD", "DOT-USD", 
-    "EIGEN-USD", "AVAX-USD", "ETH-USD", "ARB-USD", "DOGE-USD", 
-    "NEAR-USD", "ADA-USD", "RENDER-USD" # Yeni eklenenler
+    "BTC-USD", "XRP-USD", "SOL-USD", 
+    "AVAX-USD", "ETH-USD" # 5 coine indirilmis hali
 ]
 
 st.set_page_config(page_title="Crypto Analysis Dashboard", layout="wide")
@@ -97,11 +95,8 @@ elif page == "Para Akış Sinyalleri":
 elif page == "Kategori Analizi":
     st.title("📊 Kategori Analizi")
     sektor_haritasi = {
-        'BTC-USD': 'Major', 'ETH-USD': 'L1', 'SOL-USD': 'L1', 'AVAX-USD': 'L1', 'DOT-USD': 'L1',
-        'NEAR-USD': 'L1', 'ADA-USD': 'L1', 'TAO-USD': 'AI', 'RENDER-USD': 'AI', 'HYPE-USD': 'AI',
-        'EIGEN-USD': 'Restaking', 'ARB-USD': 'L2', 'XRP-USD': 'Payment', 'AAVE-USD': 'DeFi',
-        'DOGE-USD': 'Meme', 'SLERF-USD': 'Meme', 'PUMP-USD': 'Meme', 'OKB-USD': 'Exchange',
-        'ZEN-USD': 'Privacy', 'XMR-USD': 'Privacy'
+        'BTC-USD': 'Major', 'ETH-USD': 'L1', 'SOL-USD': 'L1', 'AVAX-USD': 'L1',
+        'XRP-USD': 'Payment'
     }
 
     if st.button("Sektörel Analizi Çalıştır"):
