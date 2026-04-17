@@ -3,14 +3,10 @@ import yfinance as yf
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-import time
 import io
 
-# 1. GÜNCEL SABİT COİN LİSTESİ (20 Adet)
-ALL_COINS = [
-    "BTC-USD", "XRP-USD", "SOL-USD", 
-    "AVAX-USD", "ETH-USD" # 5 coine indirilmis hali
-]
+# 1. SABİT COİN LİSTESİ (5 Adet)
+ALL_COINS = ["BTC-USD", "XRP-USD", "SOL-USD", "AVAX-USD", "ETH-USD"]
 
 st.set_page_config(page_title="Crypto Analysis Dashboard", layout="wide")
 
@@ -54,10 +50,8 @@ if page == "Korelasyon Analizi":
             returns = main_df.pct_change().fillna(0)
             corr = returns.corr().fillna(0)
 
-            fig, ax = plt.subplots(figsize=(14, 10))
+            fig, ax = plt.subplots(figsize=(10, 6))
             sns.heatmap(corr, annot=True, fmt=".2f", cmap="coolwarm", vmin=-1, vmax=1, center=0, ax=ax)
-            plt.xticks(rotation=45)
-            plt.tight_layout()
             st.pyplot(fig)
 
             excel_buffer = io.BytesIO()
@@ -72,21 +66,30 @@ elif page == "Para Akış Sinyalleri":
         analiz_listesi = []
         for coin in ALL_COINS:
             try:
+                # Veri çekme (Hacim ortalaması için 1mo gerekli)
                 df = yf.download(coin, period="1mo", interval="1d", progress=False)
-                if not df.empty and len(df) >= 6:
-                    son = float(df['Close'].iloc[-1])
-                    once = float(df['Close'].iloc[-6])
-                    f_degisim = ((son / once) - 1) * 100
-                    h_gucu = float(df['Volume'].iloc[-1]) / float(df['Volume'].rolling(20, min_periods=1).mean().iloc[-1])
-                    durum = "GÜÇLÜ GİRİŞ" if f_degisim > 0 and h_gucu > 1.2 else ("GÜÇLÜ ÇIKIŞ" if f_degisim < 0 and h_gucu > 1.2 else "ROTASYON")
+                if not df.empty and len(df) >= 2:
+                    son_fiyat = float(df['Close'].iloc[-1])
+                    # 5 günlük değişim yoksa olan en eski veriyi al
+                    index_5g = -6 if len(df) >= 6 else 0
+                    onceki_fiyat = float(df['Close'].iloc[index_5g])
+                    
+                    f_degisim = ((son_fiyat / onceki_fiyat) - 1) * 100
+                    
+                    # Hacim Gücü (En az 1 veri varsa çalışır)
+                    hacim_ort = df['Volume'].rolling(window=20, min_periods=1).mean().iloc[-1]
+                    h_gucu = float(df['Volume'].iloc[-1]) / hacim_ort if hacim_ort > 0 else 0
+                    
+                    durum = "GÜÇLÜ GİRİŞ" if f_degisim > 0 and h_gucu > 1.1 else ("GÜÇLÜ ÇIKIŞ" if f_degisim < 0 and h_gucu > 1.1 else "ROTASYON")
                     analiz_listesi.append({'Coin': coin.replace('-USD', ''), 'Değişim %': round(f_degisim, 2), 'Hacim Gücü': round(h_gucu, 2), 'Sinyal': durum})
                 else:
-                    analiz_listesi.append({'Coin': coin.replace('-USD', ''), 'Değişim %': 0, 'Hacim Gücü': 0, 'Sinyal': "VERİ YOK"})
+                    analiz_listesi.append({'Coin': coin.replace('-USD', ''), 'Değişim %': 0, 'Hacim Gücü': 0, 'Sinyal': "VERİ YETERSİZ"})
             except:
                 analiz_listesi.append({'Coin': coin.replace('-USD', ''), 'Değişim %': 0, 'Hacim Gücü': 0, 'Sinyal': "HATA"})
         
         res_df = pd.DataFrame(analiz_listesi)
         st.dataframe(res_df, use_container_width=True)
+        
         excel_buffer = io.BytesIO()
         res_df.to_excel(excel_buffer, index=False)
         st.download_button("📥 Sinyalleri Excel İndir", excel_buffer.getvalue(), "sinyaller.xlsx")
@@ -95,8 +98,7 @@ elif page == "Para Akış Sinyalleri":
 elif page == "Kategori Analizi":
     st.title("📊 Kategori Analizi")
     sektor_haritasi = {
-        'BTC-USD': 'Major', 'ETH-USD': 'L1', 'SOL-USD': 'L1', 'AVAX-USD': 'L1',
-        'XRP-USD': 'Payment'
+        'BTC-USD': 'Major', 'ETH-USD': 'L1', 'SOL-USD': 'L1', 'AVAX-USD': 'L1', 'XRP-USD': 'Payment'
     }
 
     if st.button("Sektörel Analizi Çalıştır"):
@@ -104,17 +106,21 @@ elif page == "Kategori Analizi":
         for coin in ALL_COINS:
             try:
                 df = yf.download(coin, period="1mo", interval="1d", progress=False)
-                f_degisim = ((float(df['Close'].iloc[-1]) / float(df['Close'].iloc[-6])) - 1) * 100 if not df.empty and len(df) >= 6 else 0
-                veriler.append({'Kripto': coin.replace('-USD', ''), 'Sektör': sektor_haritasi.get(coin, 'Diğer'), 'Haftalık %': round(f_degisim, 2)})
+                if not df.empty:
+                    index_5g = -6 if len(df) >= 6 else 0
+                    f_degisim = ((float(df['Close'].iloc[-1]) / float(df['Close'].iloc[index_5g])) - 1) * 100
+                    veriler.append({'Kripto': coin.replace('-USD', ''), 'Sektör': sektor_haritasi.get(coin, 'Diğer'), 'Haftalık %': round(f_degisim, 2)})
             except:
                 veriler.append({'Kripto': coin.replace('-USD', ''), 'Sektör': sektor_haritasi.get(coin, 'Diğer'), 'Haftalık %': 0})
         
-        res_df = pd.DataFrame(veriler)
-        st.dataframe(res_df, use_container_width=True)
-        st.bar_chart(res_df.groupby('Sektör')['Haftalık %'].mean())
-        excel_buffer = io.BytesIO()
-        res_df.to_excel(excel_buffer, index=False)
-        st.download_button("📥 Kategoriyi Excel İndir", excel_buffer.getvalue(), "kategori.xlsx")
+        if veriler:
+            res_df = pd.DataFrame(veriler)
+            st.dataframe(res_df, use_container_width=True)
+            st.bar_chart(res_df.groupby('Sektör')['Haftalık %'].mean())
+            
+            excel_buffer = io.BytesIO()
+            res_df.to_excel(excel_buffer, index=False)
+            st.download_button("📥 Kategoriyi Excel İndir", excel_buffer.getvalue(), "kategori.xlsx")
 
 # --- Page 4: Hacim & Getiri Analizi ---
 elif page == "Hacim & Getiri Analizi":
@@ -124,18 +130,19 @@ elif page == "Hacim & Getiri Analizi":
         for coin in ALL_COINS:
             try:
                 df = yf.download(coin, period="1mo", interval="1d", progress=False)
-                if not df.empty and len(df) >= 6:
+                if not df.empty:
                     fiyat = float(df['Close'].iloc[-1])
-                    f_degisim = ((fiyat / float(df['Close'].iloc[-6])) - 1) * 100
-                    h_gucu = float(df['Volume'].iloc[-1]) / float(df['Volume'].rolling(20, min_periods=1).mean().iloc[-1])
+                    index_5g = -6 if len(df) >= 6 else 0
+                    f_degisim = ((fiyat / float(df['Close'].iloc[index_5g])) - 1) * 100
+                    hacim_ort = df['Volume'].rolling(window=20, min_periods=1).mean().iloc[-1]
+                    h_gucu = float(df['Volume'].iloc[-1]) / hacim_ort if hacim_ort > 0 else 0
                     sonuclar.append({'Kripto Para': coin.replace('-USD', ''), 'Fiyat': round(fiyat, 4), 'Haftalık %': round(f_degisim, 2), 'Hacim Gücü': round(h_gucu, 2)})
-                else:
-                    sonuclar.append({'Kripto Para': coin.replace('-USD', ''), 'Fiyat': 0, 'Haftalık %': 0, 'Hacim Gücü': 0})
             except:
                 sonuclar.append({'Kripto Para': coin.replace('-USD', ''), 'Fiyat': 0, 'Haftalık %': 0, 'Hacim Gücü': 0})
         
-        res_df = pd.DataFrame(sonuclar)
-        st.table(res_df)
-        excel_buffer = io.BytesIO()
-        res_df.to_excel(excel_buffer, index=False)
-        st.download_button("📥 Verileri Excel İndir", excel_buffer.getvalue(), "hacim_getiri.xlsx")
+        if sonuclar:
+            res_df = pd.DataFrame(sonuclar)
+            st.table(res_df)
+            excel_buffer = io.BytesIO()
+            res_df.to_excel(excel_buffer, index=False)
+            st.download_button("📥 Verileri Excel İndir", excel_buffer.getvalue(), "hacim_getiri.xlsx")
