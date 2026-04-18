@@ -9,54 +9,66 @@ ALL_COINS = ["BTC-USD", "XRP-USD", "SOL-USD", "AVAX-USD", "ETH-USD"]
 
 st.set_page_config(page_title="Crypto Dashboard", layout="wide")
 
-# --- MULTI-INDEX BELASINI YOK EDEN FONKSİYON ---
-def get_clean_data_final(ticker):
+# --- VERİYİ SÜTUN İSİMLERİNDEN TAMAMEN ARINDIRAN FONKSİYON ---
+def get_data_by_index(ticker):
     try:
-        # Tek tek indirmek Multi-Index riskini azaltır
-        df = yf.download(ticker, period="1mo", interval="1d", progress=False)
-        if df.empty:
+        # Tekli indirme yapıyoruz
+        raw = yf.download(ticker, period="1mo", interval="1d", progress=False)
+        if raw.empty:
             return None
         
-        # KRİTİK HAMLE: Sütun isimleri ne gelirse gelsin (Close, ('Close', 'BTC-USD') vb.)
-        # Hepsini düz string'e (Close, Volume) çeviriyoruz.
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
+        # KRİTİK NOKTA: Sütun isimlerini çöpe atıyoruz.
+        # Sadece değerleri alıp kendi tablomuzu manuel kuruyoruz.
+        # Bu işlem sunucudaki MultiIndex belasını kökten yok eder.
         
-        # Kolon isimlerini garantiye alalım
-        df.columns = [str(c).strip() for c in df.columns]
+        # yfinance genelde [Open, High, Low, Close, Adj Close, Volume] sırasıyla getirir.
+        # Biz Close ve Volume'u (4. ve 6. sütun gibi) garantiye almak için sütun bazlı çekiyoruz:
+        c_values = raw["Close"].values.flatten()
+        v_values = raw["Volume"].values.flatten()
         
-        return df
+        clean_df = pd.DataFrame({
+            "Close": c_values,
+            "Volume": v_values
+        })
+        return clean_df
     except:
         return None
 
 st.sidebar.title("Menü")
-page = st.sidebar.radio("Sayfa Seç:", ["Korelasyon Analizi", "Para Akış Sinyalleri", "Kategori Analizi", "Hacim & Getiri Analizi"])
+page = st.sidebar.radio("Sayfa:", ["Korelasyon Analizi", "Para Akış Sinyalleri", "Kategori Analizi", "Hacim & Getiri Analizi"])
 
 # --- SAYFALAR ---
 
 if page == "Korelasyon Analizi":
     st.title("📊 Korelasyon Analizi")
-    if st.button("Analizi Başlat"):
-        closes = {}
+    if st.button("Hesapla"):
+        data_map = {}
         for t in ALL_COINS:
-            df = get_clean_data_final(t)
+            df = get_data_by_index(t)
             if df is not None:
-                closes[t.replace("-USD","")] = df["Close"]
-        if closes:
-            st.pyplot(sns.heatmap(pd.DataFrame(closes).pct_change().corr(), annot=True, cmap="coolwarm").figure)
+                data_map[t.replace("-USD","")] = df["Close"]
+        if data_map:
+            # Yeni bir dataframe oluşturup korelasyon alıyoruz
+            corr_matrix = pd.DataFrame(data_map).pct_change().corr().fillna(0)
+            fig, ax = plt.subplots()
+            sns.heatmap(corr_matrix, annot=True, cmap="coolwarm", ax=ax)
+            st.pyplot(fig)
 
 elif page == "Para Akış Sinyalleri":
     st.title("💰 Para Akış Sinyalleri")
-    if st.button("Sinyalleri Tara"):
+    if st.button("Sinyal Tara"):
         res = []
         for t in ALL_COINS:
-            df = get_clean_data_final(t)
+            df = get_data_by_index(t)
             if df is not None and len(df) > 6:
-                # Veriyi zorla float yapıyoruz (Streamlit Cloud bazen Object görüyor)
-                c = float(df["Close"].iloc[-1])
-                o = float(df["Close"].iloc[-6])
-                v = float(df["Volume"].iloc[-1])
-                v_avg = df["Volume"].rolling(20, min_periods=1).mean().iloc[-1]
+                # İsimlere değil, sıraya bakıyoruz
+                prices = df["Close"].astype(float)
+                volumes = df["Volume"].astype(float)
+                
+                c = prices.iloc[-1]
+                o = prices.iloc[-6]
+                v = volumes.iloc[-1]
+                v_avg = volumes.rolling(20, min_periods=1).mean().iloc[-1]
                 
                 deg = ((c / o) - 1) * 100
                 pwr = v / v_avg if v_avg > 0 else 0
@@ -67,14 +79,15 @@ elif page == "Para Akış Sinyalleri":
 
 elif page == "Kategori Analizi":
     st.title("📊 Kategori Analizi")
-    m = {'BTC-USD':'Major', 'ETH-USD':'L1', 'SOL-USD':'L1', 'AVAX-USD':'L1', 'XRP-USD':'Payment'}
-    if st.button("Analizi Çalıştır"):
+    mapping = {'BTC-USD':'Major', 'ETH-USD':'L1', 'SOL-USD':'L1', 'AVAX-USD':'L1', 'XRP-USD':'Payment'}
+    if st.button("Analizi Göster"):
         res = []
         for t in ALL_COINS:
-            df = get_clean_data_final(t)
+            df = get_data_by_index(t)
             if df is not None and len(df) > 6:
-                deg = ((float(df["Close"].iloc[-1]) / float(df["Close"].iloc[-6])) - 1) * 100
-                res.append({'Kripto': t.replace('-USD',''), 'Sektör': m.get(t, 'Diğer'), 'Haftalık %': round(deg, 2)})
+                prices = df["Close"].astype(float)
+                deg = ((prices.iloc[-1] / prices.iloc[-6]) - 1) * 100
+                res.append({'Kripto': t.replace('-USD',''), 'Sektör': mapping.get(t, 'Diğer'), 'Haftalık %': round(deg, 2)})
         if res:
             df_res = pd.DataFrame(res)
             st.dataframe(df_res)
@@ -85,11 +98,14 @@ elif page == "Hacim & Getiri Analizi":
     if st.button("Analizi Başlat"):
         res = []
         for t in ALL_COINS:
-            df = get_clean_data_final(t)
+            df = get_data_by_index(t)
             if df is not None and len(df) > 6:
-                p = float(df["Close"].iloc[-1])
-                deg = ((p / float(df["Close"].iloc[-6])) - 1) * 100
-                pwr = float(df["Volume"].iloc[-1]) / df["Volume"].rolling(20, min_periods=1).mean().iloc[-1]
+                prices = df["Close"].astype(float)
+                volumes = df["Volume"].astype(float)
+                
+                p = prices.iloc[-1]
+                deg = ((p / prices.iloc[-6]) - 1) * 100
+                pwr = volumes.iloc[-1] / volumes.rolling(20, min_periods=1).mean().iloc[-1]
                 res.append({'Kripto': t.replace('-USD',''), 'Fiyat': round(p, 4), 'Haftalık %': round(deg, 2), 'Hacim Gücü': round(pwr, 2)})
         if res:
             st.table(pd.DataFrame(res))
