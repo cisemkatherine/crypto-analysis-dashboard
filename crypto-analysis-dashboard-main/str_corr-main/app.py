@@ -15,25 +15,26 @@ def fetch_all_clean_data():
     master_data = {}
     for t in ALL_COINS:
         try:
+            # 1. Veriyi çekiyoruz
             raw = yf.download(t, period="1mo", interval="1d", progress=False)
             
             if not raw.empty:
-                # --- KRİTİK DÜZELTME BURASI ---
-                # Eğer veri çok katmanlı (MultiIndex) gelirse, katmanları temizle
+                # 2. KRİTİK DÜZELTME: Sunucudaki o çok katmanlı yapıyı (MultiIndex) düzleştiriyoruz
+                # Bu satır sayesinde "Close" sütununu her zaman doğru bulacak
                 if isinstance(raw.columns, pd.MultiIndex):
                     raw.columns = raw.columns.get_level_values(0)
-                # ------------------------------
 
-                # Sütun isimlerini garantiye alalım (boşlukları siler)
+                # 3. Sütun isimlerindeki görünmez boşlukları temizleyelim
                 raw.columns = [str(c).strip() for c in raw.columns]
 
-                # Şimdi gönül rahatlığıyla "Close" diyebiliriz
+                # 4. Verileri listeye çevirip sözlüğe kaydediyoruz
+                # .values.flatten() kullanarak verinin tipinden bağımsız hale getiriyoruz
                 c_vals = raw["Close"].values.flatten().tolist()
                 v_vals = raw["Volume"].values.flatten().tolist()
                 
                 master_data[t] = {"Close": c_vals, "Volume": v_vals}
         except Exception as e:
-            # Hatayı terminalde görmek istersen: print(f"Hata: {e}")
+            # Bir hata olursa o coin'i atlayıp diğerine geçmesi için:
             continue
     return master_data
 
