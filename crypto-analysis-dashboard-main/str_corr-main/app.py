@@ -9,27 +9,28 @@ ALL_COINS = ["BTC-USD", "XRP-USD", "SOL-USD", "AVAX-USD", "ETH-USD"]
 
 st.set_page_config(page_title="Crypto Dashboard", layout="wide")
 
-# --- VERİYİ SÜTUN İSMİNDEN BAĞIMSIZ ÇEKEN FONKSİYON ---
-def get_data_by_force(ticker):
+# --- MULTI-INDEX BELASINI YOK EDEN FONKSİYON ---
+def get_clean_data_final(ticker):
     try:
-        # Veriyi indir
-        data = yf.download(ticker, period="1mo", interval="1d", progress=False)
-        if data.empty:
+        # Tek tek indirmek Multi-Index riskini azaltır
+        df = yf.download(ticker, period="1mo", interval="1d", progress=False)
+        if df.empty:
             return None
         
-        # KRİTİK HAMLE: Sütun isimleri ne olursa olsun (tuple, str, multi), 
-        # sadece sayısal değerleri al ve kendi tablomuzu kur.
-        # Bu satır Multi-index hatasını fiziksel olarak imkansız kılar.
-        clean_df = pd.DataFrame({
-            "Close": data.get("Close").values.flatten(),
-            "Volume": data.get("Volume").values.flatten()
-        })
-        return clean_df
-    except Exception as e:
+        # KRİTİK HAMLE: Sütun isimleri ne gelirse gelsin (Close, ('Close', 'BTC-USD') vb.)
+        # Hepsini düz string'e (Close, Volume) çeviriyoruz.
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        
+        # Kolon isimlerini garantiye alalım
+        df.columns = [str(c).strip() for c in df.columns]
+        
+        return df
+    except:
         return None
 
 st.sidebar.title("Menü")
-page = st.sidebar.radio("Sayfa:", ["Korelasyon Analizi", "Para Akış Sinyalleri", "Kategori Analizi", "Hacim & Getiri Analizi"])
+page = st.sidebar.radio("Sayfa Seç:", ["Korelasyon Analizi", "Para Akış Sinyalleri", "Kategori Analizi", "Hacim & Getiri Analizi"])
 
 # --- SAYFALAR ---
 
@@ -38,23 +39,20 @@ if page == "Korelasyon Analizi":
     if st.button("Analizi Başlat"):
         closes = {}
         for t in ALL_COINS:
-            df = get_data_by_force(t)
+            df = get_clean_data_final(t)
             if df is not None:
                 closes[t.replace("-USD","")] = df["Close"]
         if closes:
-            corr_df = pd.DataFrame(closes).pct_change().corr()
-            fig, ax = plt.subplots()
-            sns.heatmap(corr_df, annot=True, cmap="coolwarm", ax=ax)
-            st.pyplot(fig)
+            st.pyplot(sns.heatmap(pd.DataFrame(closes).pct_change().corr(), annot=True, cmap="coolwarm").figure)
 
 elif page == "Para Akış Sinyalleri":
     st.title("💰 Para Akış Sinyalleri")
     if st.button("Sinyalleri Tara"):
         res = []
         for t in ALL_COINS:
-            df = get_data_by_force(t)
+            df = get_clean_data_final(t)
             if df is not None and len(df) > 6:
-                # Sayıları float olarak garantiye alıyoruz
+                # Veriyi zorla float yapıyoruz (Streamlit Cloud bazen Object görüyor)
                 c = float(df["Close"].iloc[-1])
                 o = float(df["Close"].iloc[-6])
                 v = float(df["Volume"].iloc[-1])
@@ -73,7 +71,7 @@ elif page == "Kategori Analizi":
     if st.button("Analizi Çalıştır"):
         res = []
         for t in ALL_COINS:
-            df = get_data_by_force(t)
+            df = get_clean_data_final(t)
             if df is not None and len(df) > 6:
                 deg = ((float(df["Close"].iloc[-1]) / float(df["Close"].iloc[-6])) - 1) * 100
                 res.append({'Kripto': t.replace('-USD',''), 'Sektör': m.get(t, 'Diğer'), 'Haftalık %': round(deg, 2)})
@@ -87,7 +85,7 @@ elif page == "Hacim & Getiri Analizi":
     if st.button("Analizi Başlat"):
         res = []
         for t in ALL_COINS:
-            df = get_data_by_force(t)
+            df = get_clean_data_final(t)
             if df is not None and len(df) > 6:
                 p = float(df["Close"].iloc[-1])
                 deg = ((p / float(df["Close"].iloc[-6])) - 1) * 100
