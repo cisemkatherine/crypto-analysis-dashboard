@@ -8,87 +8,98 @@ import io
 # 1. COIN LISTESI
 ALL_COINS = ["BTC-USD", "XRP-USD", "SOL-USD", "AVAX-USD", "ETH-USD"]
 
-st.set_page_config(page_title="Crypto Analysis Dashboard", layout="wide")
+st.set_page_config(page_title="Crypto Dashboard", layout="wide")
 
-st.sidebar.title("Kripto Navigasyon")
-page = st.sidebar.radio("Sayfa Seçiniz:", ["Korelasyon Analizi", "Para Akış Sinyalleri", "Kategori Analizi", "Hacim & Getiri Analizi"])
-
-# --- YARDIMCI FONKSİYON: HER COINI TEK TEK TEMİZ ÇEKER ---
-def get_clean_data(ticker):
+def get_data_safe(ticker):
     try:
-        # Tek tek indirmek, Multi-Index sütun hatasını %100 engeller
         df = yf.download(ticker, period="1mo", interval="1d", progress=False)
-        if not df.empty:
-            # Sütun isimlerini garantiye alıyoruz
-            df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
-            return df
-        return None
-    except:
+        if df.empty:
+            return None
+        
+        # --- KRİTİK DÜZELTME: Sütunları düzleştir ---
+        # Eğer MultiIndex gelirse (örn: ('Close', 'BTC-USD')), sadece ilk kısmı al ('Close')
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        else:
+            df.columns = [str(col) for col in df.columns]
+            
+        return df
+    except Exception as e:
+        st.error(f"{ticker} çekilirken teknik hata: {e}")
         return None
 
-# --- SAYFALAR ---
+st.sidebar.title("Navigasyon")
+page = st.sidebar.radio("Sayfa:", ["Korelasyon Analizi", "Para Akış Sinyalleri", "Kategori Analizi", "Hacim & Getiri Analizi"])
 
+# --- PAGE 1: KORELASYON ---
 if page == "Korelasyon Analizi":
     st.title("📊 Korelasyon Analizi")
-    if st.button("Analizi Hesapla"):
-        all_closes = {}
+    if st.button("Hesapla"):
+        data_dict = {}
         for t in ALL_COINS:
-            df = get_clean_data(t)
+            df = get_data_safe(t)
             if df is not None:
-                all_closes[t.replace("-USD","")] = df["Close"]
+                data_dict[t.replace("-USD","")] = df["Close"]
         
-        if all_closes:
-            corr_df = pd.DataFrame(all_closes).pct_change().corr().fillna(0)
-            fig, ax = plt.subplots(figsize=(10, 6))
-            sns.heatmap(corr_df, annot=True, cmap="coolwarm", center=0, ax=ax)
+        if data_dict:
+            final_df = pd.DataFrame(data_dict).pct_change().corr().fillna(0)
+            fig, ax = plt.subplots()
+            sns.heatmap(final_df, annot=True, cmap="coolwarm", ax=ax)
             st.pyplot(fig)
 
+# --- PAGE 2: PARA AKIŞI ---
 elif page == "Para Akış Sinyalleri":
     st.title("💰 Para Akış Sinyalleri")
-    if st.button("Sinyalleri Tara"):
-        res = []
+    if st.button("Tara"):
+        results = []
         for t in ALL_COINS:
-            df = get_clean_data(t)
-            if df is not None and len(df) >= 6:
-                son = float(df["Close"].iloc[-1])
-                once = float(df["Close"].iloc[-6])
-                degisim = ((son / once) - 1) * 100
-                h_ort = df["Volume"].rolling(20, min_periods=1).mean().iloc[-1]
-                h_gucu = float(df["Volume"].iloc[-1]) / h_ort if h_ort > 0 else 0
-                durum = "GÜÇLÜ GİRİŞ" if degisim > 0 and h_gucu > 1.1 else ("GÜÇLÜ ÇIKIŞ" if degisim < 0 and h_gucu > 1.1 else "ROTASYON")
-                res.append({'Coin': t.replace('-USD',''), 'Değişim %': round(degisim, 2), 'Hacim Gücü': round(h_gucu, 2), 'Sinyal': durum})
+            df = get_data_safe(t)
+            if df is not None and len(df) > 5:
+                try:
+                    # Değerleri garantiye al
+                    c_price = float(df["Close"].iloc[-1])
+                    o_price = float(df["Close"].iloc[-6])
+                    c_vol = float(df["Volume"].iloc[-1])
+                    v_mean = df["Volume"].rolling(20, min_periods=1).mean().iloc[-1]
+                    
+                    change = ((c_price / o_price) - 1) * 100
+                    v_power = c_vol / v_mean if v_mean > 0 else 0
+                    
+                    status = "GÜÇLÜ GİRİŞ" if change > 0 and v_power > 1.1 else ("GÜÇLÜ ÇIKIŞ" if change < 0 and v_power > 1.1 else "ROTASYON")
+                    results.append({'Coin': t.replace('-USD',''), 'Değişim %': round(change, 2), 'Hacim Gücü': round(v_power, 2), 'Sinyal': status})
+                except Exception as e:
+                    st.warning(f"{t} hesaplanamadı: {e}")
         
-        if res:
-            st.dataframe(pd.DataFrame(res), use_container_width=True)
+        if results:
+            st.table(pd.DataFrame(results))
 
+# --- PAGE 3: KATEGORİ ---
 elif page == "Kategori Analizi":
     st.title("📊 Kategori Analizi")
-    harita = {'BTC-USD':'Major', 'ETH-USD':'L1', 'SOL-USD':'L1', 'AVAX-USD':'L1', 'XRP-USD':'Payment'}
-    if st.button("Analizi Çalıştır"):
-        res = []
+    mapping = {'BTC-USD':'Major', 'ETH-USD':'L1', 'SOL-USD':'L1', 'AVAX-USD':'L1', 'XRP-USD':'Payment'}
+    if st.button("Çalıştır"):
+        results = []
         for t in ALL_COINS:
-            df = get_clean_data(t)
-            if df is not None and len(df) >= 6:
-                degisim = ((float(df["Close"].iloc[-1]) / float(df["Close"].iloc[-6])) - 1) * 100
-                res.append({'Kripto': t.replace('-USD',''), 'Sektör': harita.get(t, 'Diğer'), 'Haftalık %': round(degisim, 2)})
-        
-        if res:
-            df_res = pd.DataFrame(res)
-            st.dataframe(df_res, use_container_width=True)
-            st.bar_chart(df_res.groupby('Sektör')['Haftalık %'].mean())
+            df = get_data_safe(t)
+            if df is not None and len(df) > 5:
+                change = ((float(df["Close"].iloc[-1]) / float(df["Close"].iloc[-6])) - 1) * 100
+                results.append({'Kripto': t.replace('-USD',''), 'Sektör': mapping.get(t, 'Diğer'), 'Haftalık %': round(change, 2)})
+        if results:
+            res_df = pd.DataFrame(results)
+            st.dataframe(res_df)
+            st.bar_chart(res_df.groupby('Sektör')['Haftalık %'].mean())
 
+# --- PAGE 4: HACİM & GETİRİ ---
 elif page == "Hacim & Getiri Analizi":
     st.title("📊 Hacim & Getiri Analizi")
-    if st.button("Analizi Başlat"):
-        res = []
+    if st.button("Başlat"):
+        results = []
         for t in ALL_COINS:
-            df = get_clean_data(t)
-            if df is not None and len(df) >= 6:
-                son = float(df["Close"].iloc[-1])
-                degisim = ((son / float(df["Close"].iloc[-6])) - 1) * 100
-                h_ort = df["Volume"].rolling(20, min_periods=1).mean().iloc[-1]
-                h_gucu = float(df["Volume"].iloc[-1]) / h_ort if h_ort > 0 else 0
-                res.append({'Kripto': t.replace('-USD',''), 'Fiyat': round(son, 4), 'Haftalık %': round(degisim, 2), 'Hacim Gücü': round(h_gucu, 2)})
-        
-        if res:
-            st.table(pd.DataFrame(res))
+            df = get_data_safe(t)
+            if df is not None and len(df) > 5:
+                p = float(df["Close"].iloc[-1])
+                c = ((p / float(df["Close"].iloc[-6])) - 1) * 100
+                v = float(df["Volume"].iloc[-1]) / df["Volume"].rolling(20, min_periods=1).mean().iloc[-1]
+                results.append({'Kripto': t.replace('-USD',''), 'Fiyat': round(p, 4), 'Haftalık %': round(c, 2), 'Hacim Gücü': round(v, 2)})
+        if results:
+            st.table(pd.DataFrame(results))
