@@ -3,103 +3,85 @@ import yfinance as yf
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-import io
 
 # 1. COIN LISTESI
 ALL_COINS = ["BTC-USD", "XRP-USD", "SOL-USD", "AVAX-USD", "ETH-USD"]
 
 st.set_page_config(page_title="Crypto Dashboard", layout="wide")
 
-def get_data_safe(ticker):
+# --- VERİ ÇEKME FONKSİYONU (KORELASYONDA ÇALIŞAN MANTIK) ---
+def get_clean_df(ticker):
     try:
-        df = yf.download(ticker, period="1mo", interval="1d", progress=False)
-        if df.empty:
+        data = yf.download(ticker, period="1mo", interval="1d", progress=False)
+        if data.empty:
             return None
-        
-        # --- KRİTİK DÜZELTME: Sütunları düzleştir ---
-        # Eğer MultiIndex gelirse (örn: ('Close', 'BTC-USD')), sadece ilk kısmı al ('Close')
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-        else:
-            df.columns = [str(col) for col in df.columns]
-            
-        return df
-    except Exception as e:
-        st.error(f"{ticker} çekilirken teknik hata: {e}")
+        # Veriyi sözlük üzerinden yeniden inşa ederek MultiIndex belasından kurtuluyoruz
+        clean_dict = {
+            "Close": data["Close"].values.flatten(),
+            "Volume": data["Volume"].values.flatten()
+        }
+        return pd.DataFrame(clean_dict)
+    except:
         return None
 
-st.sidebar.title("Navigasyon")
+st.sidebar.title("Menü")
 page = st.sidebar.radio("Sayfa:", ["Korelasyon Analizi", "Para Akış Sinyalleri", "Kategori Analizi", "Hacim & Getiri Analizi"])
 
-# --- PAGE 1: KORELASYON ---
+# --- SAYFALAR ---
+
 if page == "Korelasyon Analizi":
     st.title("📊 Korelasyon Analizi")
     if st.button("Hesapla"):
-        data_dict = {}
+        closes = {}
         for t in ALL_COINS:
-            df = get_data_safe(t)
+            df = get_clean_df(t)
             if df is not None:
-                data_dict[t.replace("-USD","")] = df["Close"]
-        
-        if data_dict:
-            final_df = pd.DataFrame(data_dict).pct_change().corr().fillna(0)
-            fig, ax = plt.subplots()
-            sns.heatmap(final_df, annot=True, cmap="coolwarm", ax=ax)
-            st.pyplot(fig)
+                closes[t.replace("-USD","")] = df["Close"]
+        if closes:
+            st.pyplot(sns.heatmap(pd.DataFrame(closes).pct_change().corr(), annot=True, cmap="coolwarm").figure)
 
-# --- PAGE 2: PARA AKIŞI ---
 elif page == "Para Akış Sinyalleri":
     st.title("💰 Para Akış Sinyalleri")
     if st.button("Tara"):
-        results = []
+        res = []
         for t in ALL_COINS:
-            df = get_data_safe(t)
-            if df is not None and len(df) > 5:
-                try:
-                    # Değerleri garantiye al
-                    c_price = float(df["Close"].iloc[-1])
-                    o_price = float(df["Close"].iloc[-6])
-                    c_vol = float(df["Volume"].iloc[-1])
-                    v_mean = df["Volume"].rolling(20, min_periods=1).mean().iloc[-1]
-                    
-                    change = ((c_price / o_price) - 1) * 100
-                    v_power = c_vol / v_mean if v_mean > 0 else 0
-                    
-                    status = "GÜÇLÜ GİRİŞ" if change > 0 and v_power > 1.1 else ("GÜÇLÜ ÇIKIŞ" if change < 0 and v_power > 1.1 else "ROTASYON")
-                    results.append({'Coin': t.replace('-USD',''), 'Değişim %': round(change, 2), 'Hacim Gücü': round(v_power, 2), 'Sinyal': status})
-                except Exception as e:
-                    st.warning(f"{t} hesaplanamadı: {e}")
-        
-        if results:
-            st.table(pd.DataFrame(results))
+            df = get_clean_df(t)
+            if df is not None and len(df) > 6:
+                c = float(df["Close"].iloc[-1])
+                o = float(df["Close"].iloc[-6])
+                v = float(df["Volume"].iloc[-1])
+                v_avg = df["Volume"].rolling(20).mean().iloc[-1]
+                
+                deg = ((c / o) - 1) * 100
+                pwr = v / v_avg if v_avg > 0 else 0
+                sig = "GÜÇLÜ GİRİŞ" if deg > 0 and pwr > 1.1 else ("GÜÇLÜ ÇIKIŞ" if deg < 0 and pwr > 1.1 else "ROTASYON")
+                res.append({'Coin': t.replace('-USD',''), 'Değişim %': round(deg, 2), 'Hacim Gücü': round(pwr, 2), 'Sinyal': sig})
+        st.table(pd.DataFrame(res))
 
-# --- PAGE 3: KATEGORİ ---
 elif page == "Kategori Analizi":
     st.title("📊 Kategori Analizi")
-    mapping = {'BTC-USD':'Major', 'ETH-USD':'L1', 'SOL-USD':'L1', 'AVAX-USD':'L1', 'XRP-USD':'Payment'}
+    m = {'BTC-USD':'Major', 'ETH-USD':'L1', 'SOL-USD':'L1', 'AVAX-USD':'L1', 'XRP-USD':'Payment'}
     if st.button("Çalıştır"):
-        results = []
+        res = []
         for t in ALL_COINS:
-            df = get_data_safe(t)
-            if df is not None and len(df) > 5:
-                change = ((float(df["Close"].iloc[-1]) / float(df["Close"].iloc[-6])) - 1) * 100
-                results.append({'Kripto': t.replace('-USD',''), 'Sektör': mapping.get(t, 'Diğer'), 'Haftalık %': round(change, 2)})
-        if results:
-            res_df = pd.DataFrame(results)
-            st.dataframe(res_df)
-            st.bar_chart(res_df.groupby('Sektör')['Haftalık %'].mean())
+            df = get_clean_df(t)
+            if df is not None and len(df) > 6:
+                deg = ((df["Close"].iloc[-1] / df["Close"].iloc[-6]) - 1) * 100
+                res.append({'Kripto': t.replace('-USD',''), 'Sektör': m.get(t, 'Diğer'), 'Haftalık %': round(deg, 2)})
+        df_res = pd.DataFrame(res)
+        st.dataframe(df_res)
+        if not df_res.empty:
+            st.bar_chart(df_res.groupby('Sektör')['Haftalık %'].mean())
 
-# --- PAGE 4: HACİM & GETİRİ ---
 elif page == "Hacim & Getiri Analizi":
     st.title("📊 Hacim & Getiri Analizi")
     if st.button("Başlat"):
-        results = []
+        res = []
         for t in ALL_COINS:
-            df = get_data_safe(t)
-            if df is not None and len(df) > 5:
+            df = get_clean_df(t)
+            if df is not None and len(df) > 6:
                 p = float(df["Close"].iloc[-1])
-                c = ((p / float(df["Close"].iloc[-6])) - 1) * 100
-                v = float(df["Volume"].iloc[-1]) / df["Volume"].rolling(20, min_periods=1).mean().iloc[-1]
-                results.append({'Kripto': t.replace('-USD',''), 'Fiyat': round(p, 4), 'Haftalık %': round(c, 2), 'Hacim Gücü': round(v, 2)})
-        if results:
-            st.table(pd.DataFrame(results))
+                deg = ((p / df["Close"].iloc[-6]) - 1) * 100
+                pwr = float(df["Volume"].iloc[-1]) / df["Volume"].rolling(20).mean().iloc[-1]
+                res.append({'Kripto': t.replace('-USD',''), 'Fiyat': round(p, 4), 'Haftalık %': round(deg, 2), 'Hacim Gücü': round(pwr, 2)})
+        st.table(pd.DataFrame(res))
