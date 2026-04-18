@@ -15,17 +15,25 @@ def fetch_all_clean_data():
     master_data = {}
     for t in ALL_COINS:
         try:
-            # Tek tek indir, sütunları tamamen yoksayarak değerleri al
             raw = yf.download(t, period="1mo", interval="1d", progress=False)
+            
             if not raw.empty:
-                # Sütun ismi ne olursa olsun, Close ve Volume değerlerini 'zorla' al
-                # Bu kısım MultiIndex hatasını imkansız hale getirir
+                # --- KRİTİK DÜZELTME BURASI ---
+                # Eğer veri çok katmanlı (MultiIndex) gelirse, katmanları temizle
+                if isinstance(raw.columns, pd.MultiIndex):
+                    raw.columns = raw.columns.get_level_values(0)
+                # ------------------------------
+
+                # Sütun isimlerini garantiye alalım (boşlukları siler)
+                raw.columns = [str(c).strip() for c in raw.columns]
+
+                # Şimdi gönül rahatlığıyla "Close" diyebiliriz
                 c_vals = raw["Close"].values.flatten().tolist()
                 v_vals = raw["Volume"].values.flatten().tolist()
                 
-                # Sadece temiz birer liste olarak sakla
                 master_data[t] = {"Close": c_vals, "Volume": v_vals}
-        except:
+        except Exception as e:
+            # Hatayı terminalde görmek istersen: print(f"Hata: {e}")
             continue
     return master_data
 
