@@ -1,7 +1,6 @@
 streamlit
-yfinance==0.2.40
-numpy
-pandas==2.2.2
+yfinance
+pandas
 matplotlib
 seaborn
 openpyxl

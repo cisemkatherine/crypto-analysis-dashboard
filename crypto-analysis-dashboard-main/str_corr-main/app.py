@@ -6,113 +6,115 @@ import seaborn as sns
 import io
 import time
 
-# 1. SABİT COİN LİSTESİ (5 Adet)
+# 1. SABİT COİN LİSTESİ
 ALL_COINS = ["BTC-USD", "XRP-USD", "SOL-USD", "AVAX-USD", "ETH-USD"]
 
 st.set_page_config(page_title="Crypto Analysis Dashboard", layout="wide")
 
-# MERKEZİ VERİ ÇEKME FONKSİYONU (Hataları engellemek için önbellek kullanır)
-@st.cache_data(ttl=600) # 10 dakika boyunca veriyi saklar, tekrar çekmez
-def fetch_all_data(tickers, period, interval="1d"):
-    combined_data = {}
-    for ticker in tickers:
-        try:
-            df = yf.download(ticker, period=period, interval=interval, progress=False)
-            if not df.empty:
-                # Sütunları temizle ve sadece Close/Volume al
-                df = df[['Close', 'Volume']].copy()
-                df.index = df.index.tz_localize(None)
-                combined_data[ticker] = df
-            time.sleep(0.5) # Cloud için her indirme arası kısa mola
-        except:
-            continue
-    return combined_data
+# --- GELİŞMİŞ VERİ ÇEKME FONKSİYONU (RETRY MEKANİZMALI) ---
+@st.cache_data(ttl=600)
+def get_crypto_data(tickers):
+    data_store = {}
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    for i, ticker in enumerate(tickers):
+        status_text.text(f"Veri alınıyor: {ticker}...")
+        success = False
+        retries = 2 # Hata alırsa 2 kez daha deneyecek
+        
+        while retries > 0 and not success:
+            try:
+                # Ticker nesnesi üzerinden çekim yapmak Cloud'da daha stabildir
+                t = yf.Ticker(ticker)
+                df = t.history(period="1mo", interval="1d")
+                
+                if not df.empty:
+                    df.index = df.index.tz_localize(None)
+                    data_store[ticker] = df[['Close', 'Volume']]
+                    success = True
+                else:
+                    retries -= 1
+                    time.sleep(2) # Engel yememek için bekle
+            except Exception as e:
+                retries -= 1
+                time.sleep(2)
+        
+        progress_bar.progress((i + 1) / len(tickers))
+    
+    status_text.empty()
+    progress_bar.empty()
+    return data_store
 
 st.sidebar.title("Kripto Navigasyon")
 page = st.sidebar.radio("Sayfa Seçiniz:", ["Korelasyon Analizi", "Para Akış Sinyalleri", "Kategori Analizi", "Hacim & Getiri Analizi"])
 
-# --- Ortak Veri Çekme Hazırlığı ---
-# Sinyaller ve diğer analizler için genelde 1 aylık veri lazım
-all_history = fetch_all_data(ALL_COINS, "1mo", "1d")
+# Verileri çek (Cache sayesinde sadece ilk seferde veya 10 dk bir çalışır)
+all_data = get_crypto_data(ALL_COINS)
+
+if not all_data:
+    st.error("⚠️ Yahoo Finance şu an yanıt vermiyor. Lütfen 1 dakika sonra sayfayı yenileyip (F5) tekrar deneyin.")
+    st.stop()
 
 # --- Page 1: Korelasyon Analizi ---
 if page == "Korelasyon Analizi":
     st.title("📊 Kripto Para Korelasyon Analizi")
-    period_options = ["7d", "1mo", "1y"]
-    selected_period = st.selectbox("Zaman Dilimi Seçiniz:", options=period_options, index=1)
-    
-    if st.button("Korelasyonu Hesapla"):
-        # Korelasyon için taze veri çekelim (seçilen periyoda göre)
-        data_dict = fetch_all_data(ALL_COINS, selected_period, "1d")
+    if st.button("Hesaplamayı Başlat"):
+        # Fiyatları birleştir
+        close_df = pd.DataFrame({k.replace('-USD',''): v['Close'] for k, v in all_data.items()})
+        returns = close_df.pct_change().dropna()
+        corr = returns.corr()
         
-        if not data_dict:
-            st.error("Veri çekilemedi. Lütfen bir süre bekleyip tekrar deneyin.")
-        else:
-            close_prices = pd.DataFrame({k: v['Close'] for k, v in data_dict.items()})
-            # İsimleri temizle
-            close_prices.columns = [c.replace('-USD', '') for c in close_prices.columns]
-            
-            returns = close_prices.pct_change().fillna(0)
-            corr = returns.corr().fillna(0)
-
-            fig, ax = plt.subplots(figsize=(10, 6))
-            sns.heatmap(corr, annot=True, fmt=".2f", cmap="coolwarm", vmin=-1, vmax=1, center=0, ax=ax)
-            st.pyplot(fig)
-            
-            excel_buffer = io.BytesIO()
-            corr.to_excel(excel_buffer)
-            st.download_button("📊 Excel İndir", excel_buffer.getvalue(), "korelasyon.xlsx")
+        fig, ax = plt.subplots(figsize=(10, 6))
+        sns.heatmap(corr, annot=True, cmap="coolwarm", center=0, ax=ax)
+        st.pyplot(fig)
+        
+        excel_io = io.BytesIO()
+        corr.to_excel(excel_io)
+        st.download_button("Excel İndir", excel_io.getvalue(), "korelasyon.xlsx")
 
 # --- Page 2: Para Akış Sinyalleri ---
 elif page == "Para Akış Sinyalleri":
     st.title("💰 Para Akış Sinyalleri")
-    if st.button("Sinyalleri Tara"):
-        if not all_history:
-            st.error("Veri çekilemedi. Cloud bağlantısı zayıf.")
-        else:
-            res = []
-            for coin, df in all_history.items():
-                if len(df) >= 6:
-                    son = float(df['Close'].iloc[-1])
-                    once = float(df['Close'].iloc[-6]) # 5 gün önceki kapanış
-                    degisim = ((son / once) - 1) * 100
-                    hacim_ort = df['Volume'].rolling(20, min_periods=1).mean().iloc[-1]
-                    h_gucu = float(df['Volume'].iloc[-1]) / hacim_ort if hacim_ort > 0 else 0
-                    
-                    durum = "GÜÇLÜ GİRİŞ" if degisim > 0 and h_gucu > 1.1 else ("GÜÇLÜ ÇIKIŞ" if degisim < 0 and h_gucu > 1.1 else "ROTASYON")
-                    res.append({'Coin': coin.replace('-USD',''), 'Değişim %': round(degisim, 2), 'Hacim Gücü': round(h_gucu, 2), 'Sinyal': durum})
+    res = []
+    for coin, df in all_data.items():
+        if len(df) >= 6:
+            current = df['Close'].iloc[-1]
+            prev = df['Close'].iloc[-6]
+            change = ((current / prev) - 1) * 100
             
-            st.dataframe(pd.DataFrame(res), use_container_width=True)
+            vol_ma = df['Volume'].rolling(20, min_periods=1).mean().iloc[-1]
+            vol_power = df['Volume'].iloc[-1] / vol_ma if vol_ma > 0 else 0
+            
+            signal = "GÜÇLÜ GİRİŞ" if change > 0 and vol_power > 1.1 else ("GÜÇLÜ ÇIKIŞ" if change < 0 and vol_power > 1.1 else "ROTASYON")
+            res.append({'Coin': coin.replace('-USD',''), 'Değişim %': round(change, 2), 'Hacim Gücü': round(vol_power, 2), 'Sinyal': signal})
+    
+    st.dataframe(pd.DataFrame(res), use_container_width=True)
 
 # --- Page 3: Kategori Analizi ---
 elif page == "Kategori Analizi":
     st.title("📊 Kategori Analizi")
-    harita = {'BTC-USD':'Major', 'ETH-USD':'L1', 'SOL-USD':'L1', 'AVAX-USD':'L1', 'XRP-USD':'Payment'}
+    sector_map = {'BTC-USD':'Major', 'ETH-USD':'L1', 'SOL-USD':'L1', 'AVAX-USD':'L1', 'XRP-USD':'Payment'}
+    res = []
+    for coin, df in all_data.items():
+        if len(df) >= 6:
+            change = ((df['Close'].iloc[-1] / df['Close'].iloc[-6]) - 1) * 100
+            res.append({'Kripto': coin.replace('-USD',''), 'Sektör': sector_map.get(coin, 'Diğer'), 'Haftalık %': round(change, 2)})
     
-    if st.button("Analizi Çalıştır"):
-        res = []
-        for coin, df in all_history.items():
-            if len(df) >= 6:
-                degisim = ((float(df['Close'].iloc[-1]) / float(df['Close'].iloc[-6])) - 1) * 100
-                res.append({'Kripto': coin.replace('-USD',''), 'Sektör': harita.get(coin, 'Diğer'), 'Haftalık %': round(degisim, 2)})
-        
-        if res:
-            df_res = pd.DataFrame(res)
-            st.dataframe(df_res, use_container_width=True)
-            st.bar_chart(df_res.groupby('Sektör')['Haftalık %'].mean())
+    df_cat = pd.DataFrame(res)
+    st.dataframe(df_cat, use_container_width=True)
+    if not df_cat.empty:
+        st.bar_chart(df_cat.groupby('Sektör')['Haftalık %'].mean())
 
 # --- Page 4: Hacim & Getiri Analizi ---
 elif page == "Hacim & Getiri Analizi":
     st.title("📊 Hacim & Getiri Analizi")
-    if st.button("Analizi Başlat"):
-        res = []
-        for coin, df in all_history.items():
-            if len(df) >= 6:
-                son = float(df['Close'].iloc[-1])
-                degisim = ((son / float(df['Close'].iloc[-6])) - 1) * 100
-                h_ort = df['Volume'].rolling(20, min_periods=1).mean().iloc[-1]
-                h_gucu = float(df['Volume'].iloc[-1]) / h_ort if h_ort > 0 else 0
-                res.append({'Kripto Para': coin.replace('-USD',''), 'Fiyat': round(son, 4), 'Haftalık %': round(degisim, 2), 'Hacim Gücü': round(h_gucu, 2)})
-        
-        if res:
-            st.table(pd.DataFrame(res))
+    res = []
+    for coin, df in all_data.items():
+        current = df['Close'].iloc[-1]
+        change = ((current / df['Close'].iloc[-6]) - 1) * 100 if len(df) >= 6 else 0
+        vol_ma = df['Volume'].rolling(20, min_periods=1).mean().iloc[-1]
+        vol_power = df['Volume'].iloc[-1] / vol_ma if vol_ma > 0 else 0
+        res.append({'Kripto': coin.replace('-USD',''), 'Fiyat': round(current, 4), 'Haftalık %': round(change, 2), 'Hacim Gücü': round(vol_power, 2)})
+    
+    st.table(pd.DataFrame(res))
