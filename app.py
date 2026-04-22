@@ -6,12 +6,9 @@ import seaborn as sns
 import time
 import io
 
-# 1. GÜNCEL SABİT COİN LİSTESİ (20 Adet)
+# 1. GÜNCEL SABİT COİN LİSTESİ (İstediğin 5 Adet)
 ALL_COINS = [
-    "BTC-USD", "TAO-USD", "XRP-USD", "AAVE-USD", "SOL-USD", "HYPE-USD", 
-    "OKB-USD", "ZEN-USD", "PUMP-USD", "XMR-USD", "SLERF-USD", "DOT-USD", 
-    "EIGEN-USD", "AVAX-USD", "ETH-USD", "ARB-USD", "DOGE-USD", 
-    "NEAR-USD", "ADA-USD", "RENDER-USD"
+    "BTC-USD", "XRP-USD", "SOL-USD", "AVAX-USD", "ETH-USD"
 ]
 
 st.set_page_config(page_title="Crypto Analysis Dashboard", layout="wide")
@@ -40,7 +37,6 @@ if page == "Korelasyon Analizi":
                 df = yf.download(tick, period=selected_period, interval="1h" if selected_period in ["3d", "7d"] else "1d", progress=False)
                 
                 if not df.empty:
-                    # MULTIINDEX DÜZELTMESİ
                     if isinstance(df.columns, pd.MultiIndex):
                         df.columns = df.columns.get_level_values(0)
                     
@@ -61,7 +57,7 @@ if page == "Korelasyon Analizi":
             returns = main_df.pct_change().fillna(0)
             corr = returns.corr().fillna(0)
 
-            fig, ax = plt.subplots(figsize=(14, 10))
+            fig, ax = plt.subplots(figsize=(10, 8))
             sns.heatmap(corr, annot=True, fmt=".2f", cmap="coolwarm", vmin=-1, vmax=1, center=0, ax=ax)
             plt.xticks(rotation=45)
             plt.tight_layout()
@@ -80,8 +76,6 @@ elif page == "Para Akış Sinyalleri":
         for coin in ALL_COINS:
             try:
                 df = yf.download(coin, period="1mo", interval="1d", progress=False)
-                
-                # MULTIINDEX DÜZELTMESİ
                 if isinstance(df.columns, pd.MultiIndex):
                     df.columns = df.columns.get_level_values(0)
                 
@@ -106,12 +100,13 @@ elif page == "Para Akış Sinyalleri":
 # --- Sayfa 3: Kategori Analizi ---
 elif page == "Kategori Analizi":
     st.title("📊 Kategori Analizi")
+    # Sektör haritasını senin 5 coinine göre güncelledim
     sektor_haritasi = {
-        'BTC-USD': 'Major', 'ETH-USD': 'L1', 'SOL-USD': 'L1', 'AVAX-USD': 'L1', 'DOT-USD': 'L1',
-        'NEAR-USD': 'L1', 'ADA-USD': 'L1', 'TAO-USD': 'AI', 'RENDER-USD': 'AI', 'HYPE-USD': 'AI',
-        'EIGEN-USD': 'Restaking', 'ARB-USD': 'L2', 'XRP-USD': 'Payment', 'AAVE-USD': 'DeFi',
-        'DOGE-USD': 'Meme', 'SLERF-USD': 'Meme', 'PUMP-USD': 'Meme', 'OKB-USD': 'Exchange',
-        'ZEN-USD': 'Privacy', 'XMR-USD': 'Privacy'
+        'BTC-USD': 'Major', 
+        'ETH-USD': 'L1', 
+        'SOL-USD': 'L1', 
+        'AVAX-USD': 'L1', 
+        'XRP-USD': 'Payment'
     }
 
     if st.button("Sektörel Analizi Çalıştır"):
@@ -119,8 +114,6 @@ elif page == "Kategori Analizi":
         for coin in ALL_COINS:
             try:
                 df = yf.download(coin, period="1mo", interval="1d", progress=False)
-                
-                # MULTIINDEX DÜZELTMESİ
                 if isinstance(df.columns, pd.MultiIndex):
                     df.columns = df.columns.get_level_values(0)
                 
@@ -144,8 +137,6 @@ elif page == "Hacim & Getiri Analizi":
         for coin in ALL_COINS:
             try:
                 df = yf.download(coin, period="1mo", interval="1d", progress=False)
-                
-                # MULTIINDEX DÜZELTMESİ
                 if isinstance(df.columns, pd.MultiIndex):
                     df.columns = df.columns.get_level_values(0)
                 
