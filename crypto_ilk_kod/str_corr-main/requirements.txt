@@ -1,7 +1,7 @@
 streamlit
-yfinance
 pandas
+numpy
+yfinance
 matplotlib
 seaborn
-requests
 openpyxl
