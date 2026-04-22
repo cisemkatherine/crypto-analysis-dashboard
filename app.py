@@ -11,7 +11,7 @@ ALL_COINS = [
     "BTC-USD", "TAO-USD", "XRP-USD", "AAVE-USD", "SOL-USD", "HYPE-USD", 
     "OKB-USD", "ZEN-USD", "PUMP-USD", "XMR-USD", "SLERF-USD", "DOT-USD", 
     "EIGEN-USD", "AVAX-USD", "ETH-USD", "ARB-USD", "DOGE-USD", 
-    "NEAR-USD", "ADA-USD", "RENDER-USD" # Yeni eklenenler
+    "NEAR-USD", "ADA-USD", "RENDER-USD"
 ]
 
 st.set_page_config(page_title="Crypto Analysis Dashboard", layout="wide")
@@ -22,7 +22,7 @@ page = st.sidebar.radio(
     ["Korelasyon Analizi", "Para Akış Sinyalleri", "Kategori Analizi", "Hacim & Getiri Analizi"]
 )
 
-# --- Page 1: Korelasyon Analizi ---
+# --- Sayfa 1: Korelasyon Analizi ---
 if page == "Korelasyon Analizi":
     st.title("📊 Kripto Para Korelasyon Analizi")
     period_options = ["3d", "7d", "1mo", "1y"]
@@ -38,7 +38,12 @@ if page == "Korelasyon Analizi":
             try:
                 status_text.text(f"Veri çekiliyor: {tick}")
                 df = yf.download(tick, period=selected_period, interval="1h" if selected_period in ["3d", "7d"] else "1d", progress=False)
+                
                 if not df.empty:
+                    # MULTIINDEX DÜZELTMESİ
+                    if isinstance(df.columns, pd.MultiIndex):
+                        df.columns = df.columns.get_level_values(0)
+                    
                     s = df['Close'].astype(float)
                     s.index = s.index.tz_localize(None)
                     main_df[tick.replace('-USD', '')] = s
@@ -67,7 +72,7 @@ if page == "Korelasyon Analizi":
             st.download_button("📊 Korelasyon Excel İndir", excel_buffer.getvalue(), f"korelasyon_{selected_period}.xlsx")
             status_text.success("Analiz tamamlandı!")
 
-# --- Page 2: Para Akış Sinyalleri ---
+# --- Sayfa 2: Para Akış Sinyalleri ---
 elif page == "Para Akış Sinyalleri":
     st.title("💰 Para Akış Sinyalleri")
     if st.button("Sinyalleri Tara"):
@@ -75,6 +80,11 @@ elif page == "Para Akış Sinyalleri":
         for coin in ALL_COINS:
             try:
                 df = yf.download(coin, period="1mo", interval="1d", progress=False)
+                
+                # MULTIINDEX DÜZELTMESİ
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = df.columns.get_level_values(0)
+                
                 if not df.empty and len(df) >= 6:
                     son = float(df['Close'].iloc[-1])
                     once = float(df['Close'].iloc[-6])
@@ -93,7 +103,7 @@ elif page == "Para Akış Sinyalleri":
         res_df.to_excel(excel_buffer, index=False)
         st.download_button("📥 Sinyalleri Excel İndir", excel_buffer.getvalue(), "sinyaller.xlsx")
 
-# --- Page 3: Kategori Analizi ---
+# --- Sayfa 3: Kategori Analizi ---
 elif page == "Kategori Analizi":
     st.title("📊 Kategori Analizi")
     sektor_haritasi = {
@@ -109,6 +119,11 @@ elif page == "Kategori Analizi":
         for coin in ALL_COINS:
             try:
                 df = yf.download(coin, period="1mo", interval="1d", progress=False)
+                
+                # MULTIINDEX DÜZELTMESİ
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = df.columns.get_level_values(0)
+                
                 f_degisim = ((float(df['Close'].iloc[-1]) / float(df['Close'].iloc[-6])) - 1) * 100 if not df.empty and len(df) >= 6 else 0
                 veriler.append({'Kripto': coin.replace('-USD', ''), 'Sektör': sektor_haritasi.get(coin, 'Diğer'), 'Haftalık %': round(f_degisim, 2)})
             except:
@@ -121,7 +136,7 @@ elif page == "Kategori Analizi":
         res_df.to_excel(excel_buffer, index=False)
         st.download_button("📥 Kategoriyi Excel İndir", excel_buffer.getvalue(), "kategori.xlsx")
 
-# --- Page 4: Hacim & Getiri Analizi ---
+# --- Sayfa 4: Hacim & Getiri Analizi ---
 elif page == "Hacim & Getiri Analizi":
     st.title("📊 Hacim & Getiri Analizi")
     if st.button("Analizi Başlat"):
@@ -129,6 +144,11 @@ elif page == "Hacim & Getiri Analizi":
         for coin in ALL_COINS:
             try:
                 df = yf.download(coin, period="1mo", interval="1d", progress=False)
+                
+                # MULTIINDEX DÜZELTMESİ
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = df.columns.get_level_values(0)
+                
                 if not df.empty and len(df) >= 6:
                     fiyat = float(df['Close'].iloc[-1])
                     f_degisim = ((fiyat / float(df['Close'].iloc[-6])) - 1) * 100
